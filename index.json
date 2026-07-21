@@ -6,11 +6,11 @@
       "libVer": "1.0.0",
       "author": "RandomDude",
       "language": "ar",
-      "name": "Markaz Rewayat",
+      "name": "Markaz Riwayat",
       "desc": "مركز الروايات - وجهتك الأولى لعالم المتعة والإثارة",
       "icon": "",
       "repo": "https://github.com/user69hhhhh/Bruh-shosetsu-repos",
-      "src": "src/ar/markazrewayat.lua",
+      "src": "src/ar/markazriwayat.lua",
       "dep": ["url>=1.0.0", "dkjson>=1.0.0"]
     }
   ]
