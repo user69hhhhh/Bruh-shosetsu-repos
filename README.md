@@ -1,2 +1,1 @@
-# Bruh-shosetsu-repos
-New shosetsu repo I guess
+# New Arabic extentions for shosetsu 
