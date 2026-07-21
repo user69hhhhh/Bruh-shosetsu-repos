@@ -1,7 +1,7 @@
 -- {"id":99999,"ver":"1.0.0","libVer":"1.0.0","author":"WebbuNexus","dep":["url>=1.0.0","dkjson>=1.0.0"]}
 
 local baseURL = "https://markazriwayat.com"
-local baseUrlApi = "https://markazriwayat.com/wp-json/theam/v1"
+local baseUrlApi = "https://markazriwayat.com/library/"
 
 local json = Require("dkjson")
 local qs = Require("url").querystring
