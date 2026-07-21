@@ -1,0 +1,17 @@
+{
+  "extensions": [
+    {
+      "id": 0,
+      "ver": "1.0.0",
+      "libVer": "1.0.0",
+      "author": "WebbuNexus",
+      "language": "ar",
+      "name": "Markaz Riwayat",
+      "desc": "Browse novels from Markaz Riwayat",
+      "icon": "",
+      "repo": "",
+      "src": "src/ar/markazriwayat.lua",
+      "dep": []
+    }
+  ]
+}
