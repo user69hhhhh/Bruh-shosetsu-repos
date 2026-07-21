@@ -1,4 +1,4 @@
--- {"id": 0, "ver": "1.0.0", "libVer": "1.0.0", "author": "WebbuNexus", "repo": "", "dep": []}
+-- {"id": 99999, "ver": "1.0.0", "libVer": "1.0.0", "author": "WebbuNexus", "repo": "", "dep": []}
 
 local BASE_URL = "https://markazriwayat.com"
 local PER_PAGE = 25
