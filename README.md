@@ -1,1 +1,1 @@
-# New Arabic extentions for shosetsu 
+# New Arabic extentions for shosetsu (attempt)
