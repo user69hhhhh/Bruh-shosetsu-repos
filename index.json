@@ -1,16 +1,16 @@
 {
   "extensions": [
     {
-      "id": 99999,
+      "id": 100000,
       "ver": "1.0.0",
       "libVer": "1.0.0",
-      "author": "WebbuNexus",
+      "author": "RandomDude",
       "language": "ar",
-      "name": "Markaz Riwayat",
+      "name": "Markaz Rewayat",
       "desc": "مركز الروايات - وجهتك الأولى لعالم المتعة والإثارة",
       "icon": "",
-      "repo": "",
-      "src": "src/ar/markazriwayat.lua",
+      "repo": "https://github.com/user69hhhhh/Bruh-shosetsu-repos",
+      "src": "src/ar/markazrewayat.lua",
       "dep": ["url>=1.0.0", "dkjson>=1.0.0"]
     }
   ]
