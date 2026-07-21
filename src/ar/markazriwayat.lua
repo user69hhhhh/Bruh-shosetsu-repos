@@ -1,14 +1,10 @@
--- {"id":99999,"ver":"1.0.0","libVer":"1.0.0","author":"WebbuNexus","dep":["url>=1.0.0","dkjson>=1.0.0"]}
+-- {"id":99999,"ver":"1.0.0","libVer":"1.0.0","author":"WebbuNexus","dep":[]}
 
 local baseURL = "https://markazriwayat.com"
-local baseUrlApi = "https://markazriwayat.com/library/"
-
-local json = Require("dkjson")
-local qs = Require("url").querystring
 
 return {
     id = 99999,
-    name = "Markaz Riwayat - مركز الروايات",
+    name = "Markaz Riwayat",
     baseURL = baseURL,
     hasSearch = true,
     chapterType = ChapterType.HTML,
@@ -17,70 +13,57 @@ return {
     listings = {
         Listing("All Novels", true, function(data)
             local page = data[PAGE] + 1
-            -- Use the public library page
             local url = baseURL .. "/library/page/" .. page .. "/"
             local doc = Document(HttpRequest.GET(url):text())
             
-            -- Find novel items on the page
-            local items = doc:select(".novel-item, .book-item, .post-item, article, .li-row, .row-item")
+            -- Find novel containers
+            local items = doc:select(".novel-item, .book-item, article, .post-item, .li-row")
             
+            -- If no items found, try alternative selectors
             if #items == 0 then
-                -- Fallback: try different selectors
-                items = doc:select(".entry-content .row > div, .novel-list > div, .manga-list > div")
+                items = doc:select(".entry-content .row > div, .novel-list .row > div")
             end
             
-            -- If still no items, try to find any links to novels
             if #items == 0 then
-                items = doc:select("a[href*='/novel/']")
-                -- Wrap each link as an item
+                -- Look for any links to novel pages
+                local links = doc:select("a[href*='/novel/']")
+                local novelLinks = {}
+                for _, link in ipairs(links) do
+                    local href = link:attr("href")
+                    if href and not href:find("/page/") and not href:find("/category/") then
+                        table.insert(novelLinks, link)
+                    end
+                end
+                -- Convert links to items
                 local wrapped = {}
-                for _, link in ipairs(items) do
-                    table.insert(wrapped, link:parent())
+                for _, link in ipairs(novelLinks) do
+                    table.insert(wrapped, link)
                 end
                 items = wrapped
             end
             
             local novels = {}
             for _, item in ipairs(items) do
-                -- Find title link
-                local titleLink = item:selectFirst("a.title, a.novel-title, h3 a, .post-title a, .entry-title a")
+                local titleLink = item:selectFirst("a.title, h3 a, .post-title a, .entry-title a")
                 if not titleLink then
                     titleLink = item:selectFirst("a[href*='/novel/']")
                 end
                 
                 if titleLink then
                     local href = titleLink:attr("href")
-                    local link = href and href:gsub("^https?://[^/]+/", "") or ""
-                    
-                    -- Find image
-                    local img = item:selectFirst("img")
-                    local imageURL = img and img:attr("src") or ""
-                    
-                    -- Find chapter count
-                    local countEl = item:selectFirst(".chapter-count, .chapters, .count, .chapters-count")
-                    local chapterCount = countEl and countEl:text():match("%d+") or "0"
-                    
-                    table.insert(novels, Novel {
-                        link = link,
-                        title = titleLink:text():trim(),
-                        imageURL = imageURL,
-                    })
-                end
-            end
-            
-            -- If no novels found via scraping, fallback to API
-            if #novels == 0 then
-                local apiUrl = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
-                local d = json.GET(apiUrl)
-                if d and d.items then
-                    return map(d.items, function(v)
-                        local link = v.link:gsub("^https?://[^/]+/", "")
-                        return Novel {
-                            link = link,
-                            title = v.title,
-                            imageURL = v.cover or "",
-                        }
-                    end)
+                    if href then
+                        local link = href:gsub("^https?://[^/]+/", "")
+                        if link ~= "" and not link:find("/page/") then
+                            local img = item:selectFirst("img")
+                            local imageURL = img and img:attr("src") or ""
+                            
+                            table.insert(novels, Novel {
+                                link = link,
+                                title = titleLink:text():trim(),
+                                imageURL = imageURL,
+                            })
+                        end
+                    end
                 end
             end
             
@@ -88,66 +71,54 @@ return {
         end),
         
         Listing("Ongoing", true, function(data)
-            -- Use the public library page with filtering
             local page = data[PAGE] + 1
             local url = baseURL .. "/library/page/" .. page .. "/"
             local doc = Document(HttpRequest.GET(url):text())
             
-            local items = doc:select(".novel-item, .book-item, .post-item, article")
+            local items = doc:select(".novel-item, .book-item, article, .post-item")
             if #items == 0 then
                 items = doc:select("a[href*='/novel/']")
                 local wrapped = {}
                 for _, link in ipairs(items) do
-                    table.insert(wrapped, link:parent())
+                    table.insert(wrapped, link)
                 end
                 items = wrapped
             end
             
             local novels = {}
             for _, item in ipairs(items) do
-                -- Check if it has "ongoing" status
+                -- Check status
                 local statusEl = item:selectFirst(".status, .novel-status, .post-status")
                 local isOngoing = true
                 if statusEl then
                     local statusText = statusEl:text():lower()
-                    if statusText:find("مكتمل") or statusText:find("complete") then
+                    if statusText:find("مكتمل") or statusText:find("complete") or statusText:find("end") then
                         isOngoing = false
                     end
                 end
                 
                 if isOngoing then
-                    local titleLink = item:selectFirst("a.title, a.novel-title, h3 a, a[href*='/novel/']")
+                    local titleLink = item:selectFirst("a.title, h3 a, .post-title a, .entry-title a")
+                    if not titleLink then
+                        titleLink = item:selectFirst("a[href*='/novel/']")
+                    end
+                    
                     if titleLink then
                         local href = titleLink:attr("href")
-                        local link = href and href:gsub("^https?://[^/]+/", "") or ""
-                        local img = item:selectFirst("img")
-                        local imageURL = img and img:attr("src") or ""
-                        
-                        table.insert(novels, Novel {
-                            link = link,
-                            title = titleLink:text():trim(),
-                            imageURL = imageURL,
-                        })
+                        if href then
+                            local link = href:gsub("^https?://[^/]+/", "")
+                            if link ~= "" and not link:find("/page/") then
+                                local img = item:selectFirst("img")
+                                local imageURL = img and img:attr("src") or ""
+                                
+                                table.insert(novels, Novel {
+                                    link = link,
+                                    title = titleLink:text():trim(),
+                                    imageURL = imageURL,
+                                })
+                            end
+                        end
                     end
-                end
-            end
-            
-            -- If no ongoing novels found, use API
-            if #novels == 0 then
-                local apiUrl = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
-                local d = json.GET(apiUrl)
-                if d and d.items then
-                    local ongoing = filter(d.items, function(v)
-                        return v.status and v.status.key == "on-going"
-                    end)
-                    return map(ongoing, function(v)
-                        local link = v.link:gsub("^https?://[^/]+/", "")
-                        return Novel {
-                            link = link,
-                            title = v.title,
-                            imageURL = v.cover or "",
-                        }
-                    end)
                 end
             end
             
@@ -159,12 +130,12 @@ return {
             local url = baseURL .. "/library/page/" .. page .. "/"
             local doc = Document(HttpRequest.GET(url):text())
             
-            local items = doc:select(".novel-item, .book-item, .post-item, article")
+            local items = doc:select(".novel-item, .book-item, article, .post-item")
             if #items == 0 then
                 items = doc:select("a[href*='/novel/']")
                 local wrapped = {}
                 for _, link in ipairs(items) do
-                    table.insert(wrapped, link:parent())
+                    table.insert(wrapped, link)
                 end
                 items = wrapped
             end
@@ -175,43 +146,33 @@ return {
                 local isCompleted = false
                 if statusEl then
                     local statusText = statusEl:text():lower()
-                    if statusText:find("مكتمل") or statusText:find("complete") then
+                    if statusText:find("مكتمل") or statusText:find("complete") or statusText:find("end") then
                         isCompleted = true
                     end
                 end
                 
                 if isCompleted then
-                    local titleLink = item:selectFirst("a.title, a.novel-title, h3 a, a[href*='/novel/']")
+                    local titleLink = item:selectFirst("a.title, h3 a, .post-title a, .entry-title a")
+                    if not titleLink then
+                        titleLink = item:selectFirst("a[href*='/novel/']")
+                    end
+                    
                     if titleLink then
                         local href = titleLink:attr("href")
-                        local link = href and href:gsub("^https?://[^/]+/", "") or ""
-                        local img = item:selectFirst("img")
-                        local imageURL = img and img:attr("src") or ""
-                        
-                        table.insert(novels, Novel {
-                            link = link,
-                            title = titleLink:text():trim(),
-                            imageURL = imageURL,
-                        })
+                        if href then
+                            local link = href:gsub("^https?://[^/]+/", "")
+                            if link ~= "" and not link:find("/page/") then
+                                local img = item:selectFirst("img")
+                                local imageURL = img and img:attr("src") or ""
+                                
+                                table.insert(novels, Novel {
+                                    link = link,
+                                    title = titleLink:text():trim(),
+                                    imageURL = imageURL,
+                                })
+                            end
+                        end
                     end
-                end
-            end
-            
-            if #novels == 0 then
-                local apiUrl = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
-                local d = json.GET(apiUrl)
-                if d and d.items then
-                    local completed = filter(d.items, function(v)
-                        return v.status and v.status.key == "end"
-                    end)
-                    return map(completed, function(v)
-                        local link = v.link:gsub("^https?://[^/]+/", "")
-                        return Novel {
-                            link = link,
-                            title = v.title,
-                            imageURL = v.cover or "",
-                        }
-                    end)
                 end
             end
             
@@ -220,17 +181,16 @@ return {
         
         Listing("Latest Chapters", true, function(data)
             local page = data[PAGE] + 1
-            -- Use the latest chapters page
-            local url = baseURL .. "/latest-chapters/page/" .. page .. "/"
+            local url = baseURL .. "/page/" .. page .. "/"
             local doc = Document(HttpRequest.GET(url):text())
             
-            -- Find chapter items
+            -- Look for latest chapters on homepage
             local items = doc:select(".chapter-item, .post-item, article, .li-row")
             if #items == 0 then
                 items = doc:select("a[href*='/الفصل-']")
                 local wrapped = {}
                 for _, link in ipairs(items) do
-                    table.insert(wrapped, link:parent())
+                    table.insert(wrapped, link)
                 end
                 items = wrapped
             end
@@ -240,37 +200,23 @@ return {
                 local chapterLink = item:selectFirst("a[href*='/الفصل-'], a[href*='/chapter-']")
                 if chapterLink then
                     local href = chapterLink:attr("href")
-                    local link = href and href:gsub("^https?://[^/]+/", "") or ""
-                    
-                    -- Try to find novel title
-                    local titleEl = item:selectFirst(".novel-title, .book-title, .parent-title")
-                    local title = titleEl and titleEl:text():trim() or "Latest Chapter"
-                    
-                    -- Try to find novel image
-                    local img = item:selectFirst("img")
-                    local imageURL = img and img:attr("src") or ""
-                    
-                    table.insert(novels, Novel {
-                        link = link,
-                        title = title,
-                        imageURL = imageURL,
-                    })
-                end
-            end
-            
-            -- Fallback to API
-            if #novels == 0 then
-                local apiUrl = baseUrlApi .. "/latest-chapters?page=" .. page .. "&per_page=24"
-                local d = json.GET(apiUrl)
-                if d and d.items then
-                    return map(d.items, function(v)
-                        local link = v.permalink:gsub("^https?://[^/]+/", "")
-                        return Novel {
+                    if href then
+                        local link = href:gsub("^https?://[^/]+/", "")
+                        
+                        -- Try to find novel title
+                        local titleEl = item:selectFirst(".novel-title, .book-title, .parent-title, .title")
+                        local title = titleEl and titleEl:text():trim() or "Latest Chapter"
+                        
+                        -- Try to find novel image
+                        local img = item:selectFirst("img")
+                        local imageURL = img and img:attr("src") or ""
+                        
+                        table.insert(novels, Novel {
                             link = link,
-                            title = v.title,
-                            imageURL = v.cover or "",
-                        }
-                    end)
+                            title = title,
+                            imageURL = imageURL,
+                        })
+                    end
                 end
             end
             
@@ -314,52 +260,50 @@ return {
         }
 
         if loadChapters then
-            -- Find chapter links
-            local links = doc:select("li a[href*='/الفصل-'], a[href*='/الفصل-'], .chapter-list a, .wp-manga-chapter a, .list-chapter a, .chapter-link a")
+            -- Find all chapter links
+            local links = doc:select("a[href*='/الفصل-'], a[href*='/chapter-']")
             
+            -- Also try chapter list containers
             if #links == 0 then
-                links = doc:select("a[href*='chapter'], a[href*='الفصل']")
+                links = doc:select(".chapter-list a, .wp-manga-chapter a, .list-chapter a, .chapter-link a")
             end
             
             local chapters = {}
             local count = 0
             
+            -- Sort and add chapters (reverse order for first chapter first)
             for i = #links, 1, -1 do
                 local a = links[i]
                 local href = a:attr("href")
                 if href then
-                    if href:find("/الفصل-") or href:find("/chapter-") or href:find("chapter") then
-                        local link = href:gsub("^https?://[^/]+/", "")
-                        local titleText = a:text():trim()
-                        if titleText == "" then
-                            count = count + 1
-                            titleText = "الفصل " .. count
-                        else
-                            count = count + 1
-                        end
-                        table.insert(chapters, NovelChapter {
-                            link = link,
-                            title = titleText,
-                            order = count
-                        })
+                    local link = href:gsub("^https?://[^/]+/", "")
+                    count = count + 1
+                    local titleText = a:text():trim()
+                    if titleText == "" then
+                        titleText = "الفصل " .. count
                     end
+                    table.insert(chapters, NovelChapter {
+                        link = link,
+                        title = titleText,
+                        order = count
+                    })
                 end
             end
             
-            -- Fallback: generate from chapter count if available
+            -- If no chapters found, try to find any link that looks like a chapter
             if #chapters == 0 then
-                local countEl = doc:selectFirst(".chapters-count, .chapter-count, .count-chapters, .total-chapters")
-                if countEl then
-                    local num = tonumber(countEl:text():match("%d+"))
-                    if num and num > 0 then
-                        for i = num, 1, -1 do
-                            local link = novelURL:gsub("/$", "") .. "/الفصل-" .. i .. "/"
-                            table.insert(chapters, NovelChapter {
-                                link = link,
-                                title = "الفصل " .. i,
-                                order = i
-                            })
-                        end
+                local allLinks = doc:select("a")
+                for _, a in ipairs(allLinks) do
+                    local href = a:attr("href")
+                    local text = a:text():lower()
+                    if href and (href:find("chapter") or text:find("الفصل") or text:find("chapter")) then
+                        local link = href:gsub("^https?://[^/]+/", "")
+                        count = count + 1
+                        table.insert(chapters, NovelChapter {
+                            link = link,
+                            title = a:text():trim() or "الفصل " .. count,
+                            order = count
+                        })
                     end
                 end
             end
@@ -375,10 +319,14 @@ return {
         local html = HttpRequest.GET(url):text()
         local doc = Document(html)
         
-        local content = doc:selectFirst(".entry-content, .chapter-content, .post-content, article, main, .chapter-body, .content")
+        -- Try multiple content selectors
+        local content = doc:selectFirst(".entry-content, .chapter-content, .post-content, article, main, .chapter-body, .content, .txt")
+        
         if content then
+            -- Remove unwanted elements
             content:remove("script, style, header, footer, nav, aside, .ads, .advertisement, .share, .social, .related, .comments")
             
+            -- Try to get paragraphs
             local paragraphs = content:select("p")
             if #paragraphs > 0 then
                 local text = ""
@@ -393,9 +341,12 @@ return {
                 end
             end
             
-            return pageOfText(content:text(), true)
+            -- If no paragraphs, get all text with line breaks
+            local text = content:text()
+            return pageOfText(text, true)
         end
         
+        -- Fallback: return body text
         return pageOfText(doc:body():text(), true)
     end,
 
@@ -403,50 +354,42 @@ return {
         local query = data[QUERY]
         local page = data[PAGE] + 1
         
-        -- Use the library page with search parameter
-        local url = baseURL .. "/library/?s=" .. qs.encode(query) .. "&page=" .. page
+        -- Use the library search page
+        local url = baseURL .. "/library/page/" .. page .. "/?s=" .. query
         local doc = Document(HttpRequest.GET(url):text())
         
-        local items = doc:select(".novel-item, .book-item, .post-item, article")
+        local items = doc:select(".novel-item, .book-item, article, .post-item")
         if #items == 0 then
             items = doc:select("a[href*='/novel/']")
             local wrapped = {}
             for _, link in ipairs(items) do
-                table.insert(wrapped, link:parent())
+                table.insert(wrapped, link)
             end
             items = wrapped
         end
         
         local novels = {}
         for _, item in ipairs(items) do
-            local titleLink = item:selectFirst("a.title, a.novel-title, h3 a, a[href*='/novel/']")
+            local titleLink = item:selectFirst("a.title, h3 a, .post-title a, .entry-title a")
+            if not titleLink then
+                titleLink = item:selectFirst("a[href*='/novel/']")
+            end
+            
             if titleLink then
                 local href = titleLink:attr("href")
-                local link = href and href:gsub("^https?://[^/]+/", "") or ""
-                local img = item:selectFirst("img")
-                local imageURL = img and img:attr("src") or ""
-                
-                table.insert(novels, Novel {
-                    title = titleLink:text():trim(),
-                    imageURL = imageURL,
-                    link = link
-                })
-            end
-        end
-        
-        -- Fallback to API search
-        if #novels == 0 then
-            local apiUrl = baseUrlApi .. "/library?search=" .. qs.encode(query) .. "&page=" .. page .. "&per_page=24"
-            local d = json.GET(apiUrl)
-            if d and d.items then
-                return map(d.items, function(v)
-                    local link = v.link:gsub("^https?://[^/]+/", "")
-                    return Novel {
-                        title = v.title,
-                        imageURL = v.cover or "",
-                        link = link
-                    }
-                end)
+                if href then
+                    local link = href:gsub("^https?://[^/]+/", "")
+                    if link ~= "" and not link:find("/page/") then
+                        local img = item:selectFirst("img")
+                        local imageURL = img and img:attr("src") or ""
+                        
+                        table.insert(novels, Novel {
+                            title = titleLink:text():trim(),
+                            imageURL = imageURL,
+                            link = link
+                        })
+                    end
+                end
             end
         end
         
