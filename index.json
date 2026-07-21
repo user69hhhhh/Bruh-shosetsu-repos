@@ -11,7 +11,7 @@
       "icon": "",
       "repo": "",
       "src": "src/ar/markazriwayat.lua",
-      "dep": []
+      "dep": ["url>=1.0.0", "dkjson>=1.0.0"]
     }
   ]
 }
