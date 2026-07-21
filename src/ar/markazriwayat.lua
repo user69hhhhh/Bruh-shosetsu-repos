@@ -3,7 +3,6 @@
 local baseURL = "https://markazriwayat.com"
 local baseUrlApi = "https://markazriwayat.com/wp-json/theam/v1"
 
----@type dkjson
 local json = Require("dkjson")
 local qs = Require("url").querystring
 
@@ -13,28 +12,23 @@ return {
     baseURL = baseURL,
     hasSearch = true,
     chapterType = ChapterType.HTML,
+    imageURL = "https://markazriwayat.com/wp-content/uploads/2023/12/cropped-favicon-192x192.png",
     
     listings = {
         Listing("All Novels", true, function(data)
             local page = data[PAGE] + 1
-            local d = json.GET(baseUrlApi .. "/library?page=" .. page .. "&per_page=25")
+            local url = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
+            local d = json.GET(url)
             
-            return map(d.items or {}, function(v)
-                return Novel {
-                    link = v.permalink or v.link or "",
-                    title = v.title,
-                    imageURL = v.cover or "",
-                }
-            end)
-        end),
-        
-        Listing("Latest Chapters", true, function(data)
-            local page = data[PAGE] + 1
-            local d = json.GET(baseUrlApi .. "/latest-chapters?page=" .. page .. "&per_page=25")
+            if not d or not d.items then
+                return {}
+            end
             
-            return map(d.items or {}, function(v)
+            return map(d.items, function(v)
+                -- Extract novel slug from link
+                local link = v.link:gsub("^https?://[^/]+/", "")
                 return Novel {
-                    link = v.permalink or "",
+                    link = link,
                     title = v.title,
                     imageURL = v.cover or "",
                 }
@@ -43,15 +37,21 @@ return {
         
         Listing("Ongoing", true, function(data)
             local page = data[PAGE] + 1
-            local d = json.GET(baseUrlApi .. "/library?page=" .. page .. "&per_page=25")
+            local url = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
+            local d = json.GET(url)
             
-            local ongoing = filter(d.items or {}, function(v)
+            if not d or not d.items then
+                return {}
+            end
+            
+            local ongoing = filter(d.items, function(v)
                 return v.status and v.status.key == "on-going"
             end)
             
             return map(ongoing, function(v)
+                local link = v.link:gsub("^https?://[^/]+/", "")
                 return Novel {
-                    link = v.permalink or v.link or "",
+                    link = link,
                     title = v.title,
                     imageURL = v.cover or "",
                 }
@@ -60,15 +60,40 @@ return {
         
         Listing("Completed", true, function(data)
             local page = data[PAGE] + 1
-            local d = json.GET(baseUrlApi .. "/library?page=" .. page .. "&per_page=25")
+            local url = baseUrlApi .. "/library?page=" .. page .. "&per_page=24"
+            local d = json.GET(url)
             
-            local completed = filter(d.items or {}, function(v)
+            if not d or not d.items then
+                return {}
+            end
+            
+            local completed = filter(d.items, function(v)
                 return v.status and v.status.key == "end"
             end)
             
             return map(completed, function(v)
+                local link = v.link:gsub("^https?://[^/]+/", "")
                 return Novel {
-                    link = v.permalink or v.link or "",
+                    link = link,
+                    title = v.title,
+                    imageURL = v.cover or "",
+                }
+            end)
+        end),
+        
+        Listing("Latest Chapters", true, function(data)
+            local page = data[PAGE] + 1
+            local url = baseUrlApi .. "/latest-chapters?page=" .. page .. "&per_page=24"
+            local d = json.GET(url)
+            
+            if not d or not d.items then
+                return {}
+            end
+            
+            return map(d.items, function(v)
+                local link = v.permalink:gsub("^https?://[^/]+/", "")
+                return Novel {
+                    link = link,
                     title = v.title,
                     imageURL = v.cover or "",
                 }
@@ -77,55 +102,92 @@ return {
     },
 
     parseNovel = function(novelURL, loadChapters)
-        -- Fetch novel details from the page itself (no API for details)
-        local doc = Document(HttpRequest.GET(baseURL .. "/" .. novelURL):text())
+        local url = baseURL .. "/" .. novelURL
+        local doc = Document(HttpRequest.GET(url):text())
         
         -- Get title
-        local title = doc:selectFirst(".post-title, .entry-title, h1"):text() or ""
+        local titleEl = doc:selectFirst(".post-title, .entry-title, h1, .novel-title")
+        local title = titleEl and titleEl:text() or novelURL
         
         -- Get image
-        local img = doc:selectFirst(".post-thumbnail img, .entry-content img, img.wp-post-image")
-        local imageURL = img and img:attr("src") or ""
+        local imgEl = doc:selectFirst(".post-thumbnail img, .entry-content img, img.wp-post-image, .novel-cover img")
+        local imageURL = imgEl and imgEl:attr("src") or ""
         
         -- Get description
-        local desc = doc:selectFirst(".entry-content p, .post-content p, .summary, .description")
-        local description = desc and desc:text() or ""
+        local descEl = doc:selectFirst(".entry-content p, .post-content p, .summary, .description, .novel-description")
+        local description = descEl and descEl:text() or ""
+        
+        -- Get status
+        local statusText = doc:selectFirst(".status, .novel-status, .post-status")
+        local status = NovelStatus(0)
+        if statusText then
+            local text = statusText:text():lower()
+            if text:find("مكتمل") or text:find("complete") then
+                status = NovelStatus(1)
+            elseif text:find("متوقف") or text:find("hiatus") then
+                status = NovelStatus(2)
+            end
+        end
         
         local novelInfo = NovelInfo {
             title = title,
             description = description,
             imageURL = imageURL,
-            status = NovelStatus(
-                string.find(title, "مكتمل") and 1 or
-                string.find(title, "متوقف") and 2 or 0
-            )
+            status = status
         }
 
         if loadChapters then
-            -- Scrape chapter links from the page
-            local chapterElements = doc:select("li a[href*='/الفصل-'], li a[href*='/chapter-'], a[href*='/الفصل-']")
+            -- Find chapter links - use multiple selectors
+            local links = doc:select("li a[href*='/الفصل-'], a[href*='/الفصل-'], .chapter-list a, .wp-manga-chapter a, .list-chapter a, .chapter-link a")
             
-            if #chapterElements == 0 then
-                -- Try alternative selectors
-                chapterElements = doc:select(".chapter-list a, .wp-manga-chapter a, .list-chapter a")
+            -- Also try finding all links that might be chapters
+            if #links == 0 then
+                links = doc:select("a[href*='chapter'], a[href*='الفصل']")
             end
             
             local chapters = {}
-            for i = #chapterElements, 1, -1 do
-                local a = chapterElements[i]
+            local count = 0
+            
+            -- Reverse order (first chapter first)
+            for i = #links, 1, -1 do
+                local a = links[i]
                 local href = a:attr("href")
                 if href then
-                    -- Remove domain if present
-                    local link = href:gsub("^https?://[^/]+/", "")
-                    local titleText = a:text():trim()
-                    if titleText == "" then
-                        titleText = "الفصل " .. i
+                    -- Skip non-chapter links
+                    if href:find("/الفصل-") or href:find("/chapter-") or href:find("chapter") then
+                        local link = href:gsub("^https?://[^/]+/", "")
+                        local titleText = a:text():trim()
+                        if titleText == "" then
+                            count = count + 1
+                            titleText = "الفصل " .. count
+                        else
+                            count = count + 1
+                        end
+                        table.insert(chapters, NovelChapter {
+                            link = link,
+                            title = titleText,
+                            order = count
+                        })
                     end
-                    table.insert(chapters, NovelChapter {
-                        link = link,
-                        title = titleText,
-                        order = i
-                    })
+                end
+            end
+            
+            -- If no chapters found, try to generate from chapters_count in API
+            if #chapters == 0 then
+                -- Try to get chapter count from the page
+                local countEl = doc:selectFirst(".chapters-count, .chapter-count, .count-chapters, .total-chapters")
+                if countEl then
+                    local num = tonumber(countEl:text():match("%d+"))
+                    if num and num > 0 then
+                        for i = num, 1, -1 do
+                            local link = novelURL:gsub("/$", "") .. "/الفصل-" .. i .. "/"
+                            table.insert(chapters, NovelChapter {
+                                link = link,
+                                title = "الفصل " .. i,
+                                order = i
+                            })
+                        end
+                    end
                 end
             end
             
@@ -136,44 +198,57 @@ return {
     end,
 
     getPassage = function(chapterURL)
-        -- Fetch chapter content
-        local html = HttpRequest.GET(baseURL .. "/" .. chapterURL):text()
+        local url = baseURL .. "/" .. chapterURL
+        local html = HttpRequest.GET(url):text()
         local doc = Document(html)
         
-        -- Find chapter content
-        local content = doc:selectFirst(".entry-content, .chapter-content, .post-content, article, main")
+        -- Find chapter content with multiple selectors
+        local content = doc:selectFirst(".entry-content, .chapter-content, .post-content, article, main, .chapter-body, .content")
         if content then
             -- Remove unwanted elements
-            content:remove("script, style, header, footer, nav, aside, .ads, .advertisement")
-        else
-            content = doc:selectFirst("body")
-        end
-        
-        -- Process paragraphs
-        local paragraphs = content:select("p")
-        if #paragraphs > 0 then
-            local text = ""
-            for _, p in ipairs(paragraphs) do
-                text = text .. p:text() .. "\n\n"
+            content:remove("script, style, header, footer, nav, aside, .ads, .advertisement, .share, .social, .related, .comments")
+            
+            -- Try to get paragraphs
+            local paragraphs = content:select("p")
+            if #paragraphs > 0 then
+                local text = ""
+                for _, p in ipairs(paragraphs) do
+                    local pText = p:text():trim()
+                    if pText ~= "" then
+                        text = text .. pText .. "\n\n"
+                    end
+                end
+                if text ~= "" then
+                    return pageOfText(text, true)
+                end
             end
-            return pageOfText(text, true)
+            
+            -- If no paragraphs, get all text
+            return pageOfText(content:text(), true)
         end
         
-        return pageOfText(content:text(), true)
+        -- Fallback: return body text
+        return pageOfText(doc:body():text(), true)
     end,
 
     search = function(data)
         local query = data[QUERY]
         local page = data[PAGE] + 1
         
-        -- Try to search using the library endpoint with search parameter
-        local d = json.GET(baseUrlApi .. "/library?search=" .. qs.encode(query) .. "&page=" .. page .. "&per_page=25")
+        -- Use the library endpoint with search parameter
+        local url = baseUrlApi .. "/library?search=" .. qs.encode(query) .. "&page=" .. page .. "&per_page=24"
+        local d = json.GET(url)
         
-        return map(d.items or {}, function(v)
+        if not d or not d.items then
+            return {}
+        end
+        
+        return map(d.items, function(v)
+            local link = v.link:gsub("^https?://[^/]+/", "")
             return Novel {
                 title = v.title,
                 imageURL = v.cover or "",
-                link = v.permalink or v.link or ""
+                link = link
             }
         end)
     end,
