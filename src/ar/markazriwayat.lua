@@ -1,13 +1,34 @@
 -- {"id":100000,"ver":"1.0.0","libVer":"1.0.0","author":"RandomDude","repo":"https://github.com/user69hhhhh/Bruh-shosetsu-repos","dep":["url>=1.0.0","dkjson>=1.0.0"]}
 --
--- Markaz Rewayat (markazrewayat.com) Shosetsu Extension
+-- Markaz Riwayat (markazriwayat.com) Shosetsu Extension
 -- Arabic novel source extension for Shosetsu
 --
 -- API Endpoints:
 --   * Library listing: /wp-json/theam/v1/library?page=N&per_page=24
 --   * Search: /wp-json/theam/v1/library?page=N&per_page=24&s=QUERY
 --   * Novel page: /novel/{slug}/
---   * Chapter page: /novel/{slug}/chapter-{N}/
+--   * Chapter page: /novel/{slug}/chapter-{N}/ OR /novel/{slug}/الفصل-{N}/
+--
+-- API Response Structure (confirmed from actual API call):
+--   {
+--     "page": 1,
+--     "per_page": 24,
+--     "total": 269,
+--     "totalPages": 12,
+--     "items": [
+--       {
+--         "id": 150589,
+--         "title": "حكايات غريبة عن الأشباح",
+--         "link": "https://markazriwayat.com/novel/strange-tales-of-the-ghosts/",
+--         "cover": "https://markazriwayat.com/wp-content/uploads/2026/06/...",
+--         "status": {"key": "on-going", "label": "مستمرة", "class": "is-ongoing"},
+--         "chapters_count": 268,
+--         "genres": [{"name": "تاريخي", "slug": "..."}],
+--         "tags": [{"name": "رواية صينية", "slug": "..."}],
+--         "summary_preview_html": "<p>**الوصف:**...</p>"
+--       }
+--     ]
+--   }
 --
 -- HTML Selectors:
 --   * Novel title: h1.manga-title
@@ -18,7 +39,7 @@
 --   * Chapter title: .ch-title
 --   * Chapter content: .reading-content
 
-local baseURL = "https://markazrewayat.com"
+local baseURL = "https://markazriwayat.com"
 
 --------------------------------------------------------------------------
 -- JSON Decoder (Fallback for dkjson dependency)
@@ -177,10 +198,12 @@ local function shrink(url)
 end
 
 local function mapStatus(key)
-    if key == "on-going" or key == "is-ongoing" then
+    if key == "on-going" then
         return NovelStatus(0)
-    elseif key == "end" or key == "is-complete" then
+    elseif key == "end" then
         return NovelStatus(1)
+    elseif key == "canceled" then
+        return NovelStatus(2)
     else
         return NovelStatus(2)
     end
@@ -215,11 +238,11 @@ end
 
 return {
     id = 100000,
-    name = "Markaz Rewayat",
+    name = "Markaz Riwayat",
     baseURL = baseURL,
     hasSearch = true,
     chapterType = ChapterType.HTML,
-    imageURL = "https://markazrewayat.com/wp-content/uploads/2025/12/cropped-logo-192x192.jpg",
+    imageURL = "https://markazriwayat.com/wp-content/uploads/2025/12/cropped-1000168054-192x192.jpg",
 
     listings = {
         Listing("All Novels", true, function(data)
@@ -242,7 +265,7 @@ return {
             local novels = {}
             if res and res.items then
                 for _, item in ipairs(res.items) do
-                    if item.status and (item.status.key == "on-going" or item.status.key == "is-ongoing") then
+                    if item.status and item.status.key == "on-going" then
                         table.insert(novels, novelFromApiItem(item))
                     end
                 end
@@ -257,7 +280,7 @@ return {
             local novels = {}
             if res and res.items then
                 for _, item in ipairs(res.items) do
-                    if item.status and (item.status.key == "end" or item.status.key == "is-complete") then
+                    if item.status and item.status.key == "end" then
                         table.insert(novels, novelFromApiItem(item))
                     end
                 end
@@ -294,7 +317,7 @@ return {
                 status = NovelStatus(0)
             elseif classAttr:find("is%-complete") then
                 status = NovelStatus(1)
-            elseif classAttr:find("is%-stopped") or classAttr:find("is%-hiatus") then
+            elseif classAttr:find("is%-stopped") then
                 status = NovelStatus(2)
             end
         end
@@ -320,7 +343,7 @@ return {
                     local titleEl2 = row:selectFirst(".ch-title")
                     scraped[num] = {
                         link = shrink(a:attr("href")),
-                        title = titleEl2 and titleEl2:text():trim() or ("Chapter " .. num),
+                        title = titleEl2 and titleEl2:text():trim() or ("الفصل " .. num),
                     }
                     if num > maxScrapedNum then maxScrapedNum = num end
                 end
@@ -330,7 +353,7 @@ return {
             local statBlocks = doc:select(".manga-stat")
             for _, block in ipairs(statBlocks) do
                 local label = block:selectFirst(".manga-stat__label")
-                if label and label:text():lower():find("chapter") then
+                if label and label:text():lower():find("فصل") then
                     local val = block:selectFirst(".manga-stat__value")
                     if val then
                         local n = tonumber(val:text())
@@ -349,8 +372,8 @@ return {
                     })
                 else
                     table.insert(chapters, NovelChapter {
-                        link = novelSlug .. "/chapter-" .. i .. "/",
-                        title = "Chapter " .. i,
+                        link = novelSlug .. "/الفصل-" .. i .. "/",
+                        title = "الفصل " .. i,
                         order = i
                     })
                 end
