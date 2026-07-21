@@ -1,35 +1,29 @@
--- {"id":99999,"ver":"1.0.1","libVer":"1.0.0","author":"WebbuNexus","dep":[]}
+-- {"id":100000,"ver":"1.0.0","libVer":"1.0.0","author":"RandomDude","repo":"https://github.com/user69hhhhh/Bruh-shosetsu-repos","dep":["url>=1.0.0","dkjson>=1.0.0"]}
 --
--- Markaz Riwayat (markazriwayat.com) Shosetsu extension
+-- Markaz Rewayat (markazrewayat.com) Shosetsu Extension
+-- Arabic novel source extension for Shosetsu
 --
--- CONFIRMED via direct testing:
---   * Library listing JSON API: /wp-json/theam/v1/library?page=N&per_page=24
---     -> {"page","per_page","total","totalPages","items":[{id,title,link,cover,
---         status:{key,label,class}, chapters_count, genres, tags, summary_preview_html}]}
---   * Novel page HTML selectors (h1.manga-title, .manga-cover-wrap img[data-src],
---     .status-pill.manga-status-pill, #manga-summary, .pill-list a.pill, .ch-list .ch-row)
---   * Chapter page HTML selectors (.reading-content, stray .theam-chobf spam spans
---     that must be stripped before reading text)
---   * The chapters pagination endpoint the "load more" button calls is:
---       https://markazriwayat.com/wp-json/theam/v1/manga-chapters
---     confirmed from the page's own embedded config (MMR_DATA.chaptersApi).
---     ASSUMED (could not verify response shape - direct fetch is bot-blocked
---     for anything except the library endpoint): query params manga_id/page/per_page
---     (matching the "manga_id" param name used elsewhere on the same page, e.g. the
---     view-tracking pixel), and a response shaped like the library endpoint
---     (items/total/totalPages). If this turns out wrong, parseNovel falls back to
---     just the ~30 newest chapters that ship in the raw novel-page HTML, so the
---     extension still works rather than breaking outright.
+-- API Endpoints:
+--   * Library listing: /wp-json/theam/v1/library?page=N&per_page=24
+--   * Search: /wp-json/theam/v1/library?page=N&per_page=24&s=QUERY
+--   * Novel page: /novel/{slug}/
+--   * Chapter page: /novel/{slug}/chapter-{N}/
 --
--- If pagination doesn't pull all chapters when you test this, open the novel page
--- in a desktop browser, DevTools > Network > XHR, click "عرض المزيد" once, and send
--- me the request URL + response JSON so I can fix parse_chapters_response() exactly.
+-- HTML Selectors:
+--   * Novel title: h1.manga-title
+--   * Novel cover: .manga-cover-wrap img[data-src]
+--   * Novel summary: #manga-summary
+--   * Novel status: .status-pill.manga-status-pill
+--   * Chapter list: .ch-list .ch-row
+--   * Chapter title: .ch-title
+--   * Chapter content: .reading-content
 
-local baseURL = "https://markazriwayat.com"
+local baseURL = "https://markazrewayat.com"
 
 --------------------------------------------------------------------------
--- Minimal JSON decoder (no external deps available in the Lua sandbox)
+-- JSON Decoder (Fallback for dkjson dependency)
 --------------------------------------------------------------------------
+
 local json = {}
 do
     local function skipWhitespace(s, i)
@@ -44,7 +38,7 @@ do
     local parseValue
 
     local function parseString(s, i)
-        i = i + 1 -- skip opening quote
+        i = i + 1
         local out = {}
         while true do
             local c = s:sub(i, i)
@@ -124,7 +118,7 @@ do
             local key
             key, i = parseString(s, i)
             i = skipWhitespace(s, i)
-            i = i + 1 -- skip colon
+            i = i + 1
             i = skipWhitespace(s, i)
             local v
             v, i = parseValue(s, i)
@@ -175,30 +169,28 @@ do
 end
 
 --------------------------------------------------------------------------
--- Helpers
+-- Helper Functions
 --------------------------------------------------------------------------
 
 local function shrink(url)
     return url:gsub("^https?://[^/]+/", "")
 end
 
--- Map the API's status.key / the HTML status-pill class to a NovelStatus
 local function mapStatus(key)
     if key == "on-going" or key == "is-ongoing" then
         return NovelStatus(0)
     elseif key == "end" or key == "is-complete" then
         return NovelStatus(1)
     else
-        return NovelStatus(2) -- canceled / stopped / anything else -> paused/hiatus
+        return NovelStatus(2)
     end
 end
 
--- Convert #manga-summary's raw HTML (which uses <br> instead of <p>) into plain text
 local function summaryHtmlToText(html)
     if not html then return "" end
     local text = html
     text = text:gsub("<br%s*/?>", "\n")
-    text = text:gsub("<[^>]->", "") -- strip remaining tags (e.g. leftover <strong>)
+    text = text:gsub("<[^>]->", "")
     text = text:gsub("&nbsp;", " ")
     text = text:gsub("&amp;", "&")
     text = text:gsub("&quot;", '"')
@@ -207,7 +199,6 @@ local function summaryHtmlToText(html)
     return text:trim and text:trim() or text
 end
 
--- Build a Novel{} from one item of the /library JSON API
 local function novelFromApiItem(item)
     local cover = item.cover or ""
     local link = item.link and shrink(item.link) or ""
@@ -219,16 +210,16 @@ local function novelFromApiItem(item)
 end
 
 --------------------------------------------------------------------------
--- Extension definition
+-- Extension Definition
 --------------------------------------------------------------------------
 
 return {
-    id = 99999,
-    name = "Markaz Riwayat",
+    id = 100000,
+    name = "Markaz Rewayat",
     baseURL = baseURL,
     hasSearch = true,
     chapterType = ChapterType.HTML,
-    imageURL = "https://markazriwayat.com/wp-content/uploads/2025/12/cropped-1000168054-192x192.jpg",
+    imageURL = "https://markazrewayat.com/wp-content/uploads/2025/12/cropped-logo-192x192.jpg",
 
     listings = {
         Listing("All Novels", true, function(data)
@@ -251,7 +242,7 @@ return {
             local novels = {}
             if res and res.items then
                 for _, item in ipairs(res.items) do
-                    if item.status and item.status.key == "on-going" then
+                    if item.status and (item.status.key == "on-going" or item.status.key == "is-ongoing") then
                         table.insert(novels, novelFromApiItem(item))
                     end
                 end
@@ -266,7 +257,7 @@ return {
             local novels = {}
             if res and res.items then
                 for _, item in ipairs(res.items) do
-                    if item.status and item.status.key == "end" then
+                    if item.status and (item.status.key == "end" or item.status.key == "is-complete") then
                         table.insert(novels, novelFromApiItem(item))
                     end
                 end
@@ -303,7 +294,7 @@ return {
                 status = NovelStatus(0)
             elseif classAttr:find("is%-complete") then
                 status = NovelStatus(1)
-            elseif classAttr:find("is%-stopped") then
+            elseif classAttr:find("is%-stopped") or classAttr:find("is%-hiatus") then
                 status = NovelStatus(2)
             end
         end
@@ -317,13 +308,8 @@ return {
 
         if loadChapters then
             local chapters = {}
-
-            -- Confirmed chapter URL pattern: novel/{slug}/الفصل-{N}/
-            -- (e.g. novel/strange-tales-of-the-ghosts/الفصل-270/)
             local novelSlug = novelURL:gsub("/+$", "")
 
-            -- Scrape whichever chapters are present in the raw HTML (usually the
-            -- newest ~30) so we get their real titles, keyed by chapter number.
             local scraped = {}
             local maxScrapedNum = 0
             local rows = doc:select(".ch-list .ch-row")
@@ -334,18 +320,17 @@ return {
                     local titleEl2 = row:selectFirst(".ch-title")
                     scraped[num] = {
                         link = shrink(a:attr("href")),
-                        title = titleEl2 and titleEl2:text():trim() or ("الفصل " .. num),
+                        title = titleEl2 and titleEl2:text():trim() or ("Chapter " .. num),
                     }
                     if num > maxScrapedNum then maxScrapedNum = num end
                 end
             end
 
-            -- Total chapter count, read from the "N فصل" stat near the top of the page
             local totalChapters = maxScrapedNum
             local statBlocks = doc:select(".manga-stat")
             for _, block in ipairs(statBlocks) do
                 local label = block:selectFirst(".manga-stat__label")
-                if label and label:text():find("فصل") then
+                if label and label:text():lower():find("chapter") then
                     local val = block:selectFirst(".manga-stat__value")
                     if val then
                         local n = tonumber(val:text())
@@ -364,8 +349,8 @@ return {
                     })
                 else
                     table.insert(chapters, NovelChapter {
-                        link = novelSlug .. "/" .. Utils.URLEncode("الفصل-" .. i) .. "/",
-                        title = "الفصل " .. i,
+                        link = novelSlug .. "/chapter-" .. i .. "/",
+                        title = "Chapter " .. i,
                         order = i
                     })
                 end
@@ -387,10 +372,8 @@ return {
             return pageOfText(doc:body():text(), true)
         end
 
-        -- Strip the invisible anti-piracy spam spans injected between/inside paragraphs
         content:select(".theam-chobf"):remove()
-        -- Strip the hidden helper input and any nav/ad cruft that might be inside
-        content:select("input, script, style").remove and content:select("input, script, style"):remove()
+        content:select("input, script, style, iframe, noscript"):remove()
 
         local paragraphs = content:select("p")
         local text = ""
