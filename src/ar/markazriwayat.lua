@@ -3,6 +3,8 @@
 local BASE_URL = "https://markazriwayat.com"
 local PER_PAGE = 25
 
+-- ====== Helper Functions ======
+
 local function fetch_json(url)
     local resp = HttpRequest(BASE_URL .. url):get()
     return Json.decode(resp.body)
@@ -26,6 +28,8 @@ local function extract_chapter_content(html)
     end
     return doc:body():text():trim()
 end
+
+-- ====== getNovels ======
 
 function getNovels(search, page, filters)
     local mode = "all"
@@ -87,6 +91,8 @@ function getNovels(search, page, filters)
     }
 end
 
+-- ====== getChapters ======
+
 function getChapters(novel)
     local chapters = {}
     local novelUrl = novel.link
@@ -125,11 +131,18 @@ function getChapters(novel)
     return chapters
 end
 
+-- ====== getChapterContent ======
+
 function getChapterContent(chapter)
     local html = fetch_html(chapter.url)
     local text = extract_chapter_content(html)
-    return { content = text, content_type = "text/plain" }
+    return {
+        content = text,
+        content_type = "text/plain"
+    }
 end
+
+-- ====== getFilters ======
 
 function getFilters()
     return {
